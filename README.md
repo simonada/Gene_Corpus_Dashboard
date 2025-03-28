@@ -2,7 +2,7 @@
 
 ## Code and local testing
 
-The main file is [./neurotrial_dashboard.qmd](./neurotrial_dashboard.qmd).
+The main file is [./gene_corpus_dashboard.qmd](./gene_corpus_dashboard.qmd).
 
 You can run the following to preview the dashboard in localhost:
 ```
