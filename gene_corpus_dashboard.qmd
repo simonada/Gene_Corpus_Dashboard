@@ -1,0 +1,403 @@
+---
+title: "Gene-Pathways-Corpus"
+logo: uoe-crest.png
+server: shiny
+favicon: favicon.ico
+format: 
+  dashboard:
+    scrolling: true 
+    nav-buttons:
+      - icon: github
+        href: https://github.com/Ineichen-Group/NeuroTrialomics-Dashboard
+---
+
+```{python}
+#| context: setup
+import math
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from shiny import render, reactive, ui
+from shinywidgets import render_widget  
+import datamapplot as dmp
+import numpy as np
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+
+import pandas as pd
+import plotly.express as px
+```
+
+```{python}
+#| title: Filter Options
+#| expandable: false
+
+df = pd.read_csv("data_for_dashboard_articles.csv")
+df2 = pd.read_csv("data_for_dashboard_gene_paths_with_common.csv")
+
+path_options = ['Show All (Paths)'] + sorted(df['highest_level_path'].dropna().unique())
+gene_options = ['Show All (Genes)'] + sorted(df['gene'].dropna().unique())
+pmid_options = ['Show All (PMID)'] + sorted(map(str, df['pmid'].dropna().unique()))
+
+#pmid_options = ['Show All (PMID)'] + list(df['pmid'].unique())
+min_year = int(df['pub_year'].min())
+max_year = int(df['pub_year'].max())
+```
+
+## {.sidebar}
+```{python}
+ui.input_selectize(
+    "path_name", 
+    "Select Path", 
+    choices=path_options, 
+    selected="Show All (Paths)" 
+   
+)
+
+ui.input_selectize(
+    "gene_name", 
+    "Select Gene", 
+    choices=gene_options, 
+    selected="Show All (Genes)"
+    
+)
+
+ui.input_selectize(
+    "pmid_name", 
+    "Select PMID", 
+    choices=pmid_options, 
+    selected="Show All (PMID)"
+    
+)
+
+# Add numeric input fields for the minimum and maximum start year
+ui.input_numeric("min_year", "Minimum Publication Year", value=min_year, min=min_year, max=max_year)
+ui.input_numeric("max_year", "Maximum Publication Year", value=max_year, min=min_year, max=max_year)
+```
+
+```{python}
+@reactive.calc
+def filtered_articles():
+    path = input.path_name()
+    gene = input.gene_name()
+    pmid = input.pmid_name()
+    
+    min_year_selected = input.min_year()
+    max_year_selected = input.max_year()
+
+    filtered_df = df
+    if path != 'Show All (Paths)':
+        filtered_df = filtered_df[filtered_df['highest_level_path'] == path]
+    
+    if gene != 'Show All (Genes)':  
+        filtered_df = filtered_df[filtered_df['gene'] == gene]
+    
+    if pmid != 'Show All (PMID)':  
+        pmid = int(pmid)
+        filtered_df = filtered_df[filtered_df['pmid'] == pmid]
+    
+    year_col = "pub_year"
+    filtered_df[year_col] = filtered_df[year_col].astype(int)
+    filtered_df = filtered_df[(filtered_df[year_col] >= min_year_selected) & 
+                              (filtered_df[year_col] <= max_year_selected)]
+
+    return filtered_df
+```
+
+```{python}
+@reactive.calc
+def filter_pathways():
+    path = input.path_name()
+    gene = input.gene_name()
+
+    filtered_df = df2
+    if path != 'Show All (Paths)':
+        filtered_df = filtered_df[filtered_df['highest_level_path'] == path]
+    
+    return filtered_df
+```
+
+
+# Viz
+
+## Row {height=120px}
+
+```{python}
+#| id: articles-box
+@render.plot
+def articles_text():
+    num_articles = len(filtered_articles())
+    fig, ax = plt.subplots(figsize=(3, 1))
+    ax.text(0.5, 0.5, f"{num_articles} Articles", fontsize=16, ha='center', va='center')
+    ax.axis('off')
+    return fig
+```
+
+```{python}
+#| id: pathways-box
+@render.plot
+def pathways_text():
+    df = filtered_articles()
+    num_pathways = df['highest_level_path'].nunique()
+    fig, ax = plt.subplots(figsize=(3, 1))
+    ax.text(0.5, 0.5, f"{num_pathways} Pathways", fontsize=16, ha='center', va='center')
+    ax.axis('off')
+    return fig
+```
+
+```{python}
+#| id: genes-box
+@render.plot
+def genes_text():
+    df = filtered_articles()
+    num_genes = df['gene'].nunique()
+    fig, ax = plt.subplots(figsize=(3, 1))
+    ax.text(0.5, 0.5, f"{num_genes} Genes", fontsize=16, ha='center', va='center')
+    ax.axis('off')
+    return fig
+```
+
+## Row {height=40%}
+
+### Column {.tabset}
+
+```{python}
+#| title: Pathway -> Genes
+
+@render.ui
+def gene_pathway_viz():
+    filtered_df = filter_pathways()
+    xy_scaled = filtered_df[["x", "y"]].values
+    label_array = filtered_df["label"].values
+    genes_array = filtered_df["gene"].values
+    return dmp.create_interactive_plot(
+    xy_scaled,
+    label_array,
+    genes_array,
+)
+```
+
+```{python}
+#| title: Pathway -> Genes -> Articles
+
+@render.ui
+def article_pathway_gene_viz():
+    filtered_df = filtered_articles()
+    xy_scaled = filtered_df[["x_nw_cluster_hier", "y_nw_cluster_hier"]].values
+    label_array = filtered_df["highest_level_path"].values
+    pmid_title = filtered_df["pmid_title"].values
+    genes_array = filtered_df["gene symbol"].values
+    return dmp.create_interactive_plot(
+    xy_scaled,
+    label_array,
+    genes_array,
+    hover_text=pmid_title,
+    enable_search=True,
+)
+```
+
+```{python}
+#| title: Pathway -> Articles
+
+@render.ui
+def article_pathway_viz():
+    filtered_df = filtered_articles()
+    xy_scaled = filtered_df[["x_nw_cluster", "y_nw_cluster"]].values
+    label_array = filtered_df["highest_level_path"].values
+    pmid_title = filtered_df["pmid_title"].values
+    genes_array = filtered_df["gene symbol"].values
+    return dmp.create_interactive_plot(
+    xy_scaled,
+    label_array,
+    genes_array,
+    hover_text=pmid_title,
+    enable_search=True,
+)
+```
+
+```{python}
+#| title: 2D Semantic Articles Map
+
+@render_widget  
+def tsne_scatter():  
+    filtered_df = filtered_articles()
+    path = input.path_name()
+    scatterplot = px.scatter(
+        filtered_df, 
+        x='x', 
+        y='y', 
+        color='highest_level_path',
+        hover_data={'x': False, 'y': False, 'pmid': True,  'pub_year': True, 'title': True, 'gene':True},
+        title=f"2D Map of {'All Clusters' if path == 'Show All' else path + ': ' + str(len(filtered_df)) + ' PMIDS' }",
+        labels={'x': 't-SNE X', 'y': 't-SNE Y'},
+        template="plotly_white",
+        #legend='cluster'
+    ).update_traces(marker=dict(size=10, line=dict(width=1, color='DarkSlateGrey')))#.update_layout(
+        #width=900,
+        #height=700,
+        ##)
+    return scatterplot  
+
+```
+
+```{python}
+#| title: Filtered data
+
+@render.data_frame
+def datagrid():
+    filtered_df = filtered_articles()
+  
+    df_to_show = filtered_df[['pmid','title','pub_year','gene','highest_level_path']]
+    return render.DataGrid(
+        df_to_show,
+        width="100%",
+        filters=True,
+    )
+```
+
+## Row
+
+### Column
+```{python}
+@render_widget
+def genes_bar_chart():
+    filtered_df = filtered_articles()
+    filter_col = 'gene'
+    
+    # Count gene occurrences and name the count column directly
+    status_counts = (
+        filtered_df[filter_col]
+        .value_counts()
+        .reset_index(name='count')
+        .rename(columns={'index': filter_col})
+    )
+
+    # Limit to top 20 genes
+    status_counts = status_counts.head(20).sort_values(by='count', ascending=True)
+
+    # Create horizontal bar chart
+    bar_chart = px.bar(
+        status_counts, 
+        x='count', 
+        y=filter_col,
+        title="Top 20 Genes by Article Count",
+        template="plotly_white",
+        text='count',
+        color_discrete_sequence=px.colors.qualitative.Pastel,
+        orientation='h'
+    )
+
+    bar_chart.update_traces(textposition='outside', textfont_size=12)
+    
+    return bar_chart
+```
+### Column
+
+```{python}
+@render_widget
+def pathways_chart():
+    filtered_df = filtered_articles()
+    filter_col = 'highest_level_path'
+    
+    # Count the occurrences of each overall status
+    status_counts = filtered_df[filter_col].value_counts().reset_index()
+    status_counts.columns = [filter_col, 'count']
+    status_counts = status_counts.sort_values(by='count', ascending=True)
+    # Create the bar chart with the correct x and y axes
+    bar_chart = px.bar(
+        status_counts, 
+        x='count', 
+        y=filter_col,  # Correctly specify the y-axis as the count
+        title="Distribution of Highest Level Path",
+        template="plotly_white",
+        text='count',  # Display counts on top of the bars
+        color_discrete_sequence=px.colors.qualitative.Pastel,
+        orientation='h'
+    )
+
+    bar_chart.update_traces(textposition='outside', textfont_size=12)
+    
+    return bar_chart
+```
+## Row
+
+### Column
+```{python}
+@render_widget
+def pub_year_bar_chart():
+    filtered_df = filtered_articles()
+    year_col = "pub_year"
+    
+    # Count the occurrences of each overall status
+    status_counts = filtered_df[year_col].value_counts().reset_index()
+    status_counts.columns = [year_col, 'count']
+    
+    # Create the bar chart with the correct x and y axes
+    bar_chart = px.bar(
+        status_counts, 
+        x=year_col, 
+        y='count',  # Correctly specify the y-axis as the count
+        title="Distribution of Publication Year",
+        template="plotly_white",
+        text='count',  # Display counts on top of the bars
+        color_discrete_sequence=px.colors.qualitative.Pastel,
+        orientation='v'
+    )
+
+    bar_chart.update_traces(textposition='outside', textfont_size=12)
+    
+    return bar_chart
+```
+### Column
+
+```{python}
+@render_widget
+def journal_bar_chart():
+    filtered_df = filtered_articles()
+    filter_col = 'journal'
+    
+    # Count journal occurrences
+    status_counts = (
+        filtered_df[filter_col]
+        .value_counts()
+        .reset_index()
+        .rename(columns={'index': filter_col})
+    )
+
+    # Select top 20 journals
+    status_counts = status_counts.head(20).sort_values(by='count', ascending=True)
+
+    # Create horizontal bar chart
+    bar_chart = px.bar(
+        status_counts,
+        x='count',
+        y=filter_col,
+        title="Top 20 Journals by Article Count",
+        template="plotly_white",
+        text='count',
+        color_discrete_sequence=px.colors.qualitative.Pastel,
+        orientation='h'
+    )
+
+    bar_chart.update_traces(textposition='outside', textfont_size=12)
+    
+    return bar_chart
+```
+
+# Raw Data
+
+```{python}
+#| title: Raw data
+#| width: 100%
+#| padding: 0;
+from itables import show
+
+df_to_show = df[['pmid','title','pub_year','gene','highest_level_path']]
+df_to_show['pmid'] = df_to_show['pmid'].apply(
+    lambda x: f'<a href="https://pubmed.ncbi.nlm.nih.gov/{x}" target="_blank">{x}</a>'
+)
+show(df_to_show, paging=True, buttons = ['csv'], classes="display")
+```
+
+
+
