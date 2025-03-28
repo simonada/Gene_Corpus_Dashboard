@@ -1,5 +1,15 @@
 # Gene_Corpus_Dashboard
 
+## Setup 
+
+This dashboard was created using [Quarto Dashboards with Shiny for Python](https://quarto.org/docs/dashboards/interactivity/shiny-python/index.html).
+
+You can install the required libraries in a local environment via:
+```
+conda env create -f environment.yml
+```
+
+
 ## Code and local testing
 
 The main file is [./gene_corpus_dashboard.qmd](./gene_corpus_dashboard.qmd).
