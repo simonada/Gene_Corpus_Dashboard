@@ -6,14 +6,14 @@ The main file is [./gene_corpus_dashboard.qmd](./gene_corpus_dashboard.qmd).
 
 You can run the following to preview the dashboard in localhost:
 ```
-quarto preview neurotrial_dashboard.qmd
+quarto preview gene_corpus_dashboard.qmd.qmd
 ```
 
 The command should also result in the following outputs:
 
 ```
-neurotrial_dashboard.html
-neurotrial_dashboard_files/
+gene_corpus_dashboard.qmd.html
+gene_corpus_dashboard.qmd/
 app.py
 ```
 
