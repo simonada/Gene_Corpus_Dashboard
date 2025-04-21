@@ -8,7 +8,7 @@ format:
     scrolling: true 
     nav-buttons:
       - icon: github
-        href: https://github.com/Ineichen-Group/NeuroTrialomics-Dashboard
+        href: https://github.com/simonada/Gene_Corpus_Dashboard/tree/main
 ---
 
 ```{python}
@@ -32,25 +32,43 @@ import plotly.express as px
 #| title: Filter Options
 #| expandable: false
 
-df = pd.read_csv("data_for_dashboard_articles.csv")
-df2 = pd.read_csv("data_for_dashboard_gene_paths_with_common.csv")
+df = pd.read_csv("df_with_pos_all.csv")
 
 path_options = ['Show All (Paths)'] + sorted(df['highest_level_path'].dropna().unique())
 gene_options = ['Show All (Genes)'] + sorted(df['gene'].dropna().unique())
+disease_options = ['Show All (Diseases)'] + sorted(map(str, df['disease'].dropna().unique()))
 pmid_options = ['Show All (PMID)'] + sorted(map(str, df['pmid'].dropna().unique()))
 
 #pmid_options = ['Show All (PMID)'] + list(df['pmid'].unique())
-min_year = int(df['pub_year'].min())
-max_year = int(df['pub_year'].max())
+min_year = int(df['pubdate'].min())
+max_year = int(df['pubdate'].max())
 ```
 
+```{python}
+@reactive.effect
+def reset_filters_effect():
+    if input.reset_filters() > 0:
+        # Resetting all the multi-select inputs
+        ui.update_selectize("path_name", selected=["Show All (Paths)"])
+        ui.update_selectize("gene_name", selected=["Show All (Genes)"])
+        ui.update_selectize("pmid_name", selected=["Show All (PMID)"])
+        ui.update_selectize("disease_name", selected=["Show All (Diseases)"])
+
+        # Reset year range to full min-max
+        ui.update_numeric("min_year", value=min_year)
+        ui.update_numeric("max_year", value=max_year)
+```
 ## {.sidebar}
 ```{python}
+
+ui.input_action_button("reset_filters", "Clear All Selections", class_="btn btn-secondary")
+
 ui.input_selectize(
     "path_name", 
     "Select Path", 
     choices=path_options, 
-    selected="Show All (Paths)" 
+    selected="Show All (Paths)",
+    multiple=True
    
 )
 
@@ -58,7 +76,17 @@ ui.input_selectize(
     "gene_name", 
     "Select Gene", 
     choices=gene_options, 
-    selected="Show All (Genes)"
+    selected="Show All (Genes)",
+    multiple=True
+    
+)
+
+ui.input_selectize(
+    "disease_name", 
+    "Select Disease", 
+    choices=disease_options, 
+    selected="Show All (Diseases)",
+    multiple=True
     
 )
 
@@ -66,7 +94,8 @@ ui.input_selectize(
     "pmid_name", 
     "Select PMID", 
     choices=pmid_options, 
-    selected="Show All (PMID)"
+    selected="Show All (PMID)",
+    multiple=True
     
 )
 
@@ -80,23 +109,31 @@ ui.input_numeric("max_year", "Maximum Publication Year", value=max_year, min=min
 def filtered_articles():
     path = input.path_name()
     gene = input.gene_name()
+    disease = input.disease_name()
     pmid = input.pmid_name()
     
     min_year_selected = input.min_year()
     max_year_selected = input.max_year()
 
     filtered_df = df
-    if path != 'Show All (Paths)':
-        filtered_df = filtered_df[filtered_df['highest_level_path'] == path]
+    # Handle Path filtering
+    if path and "Show All (Paths)" not in path:
+        filtered_df = filtered_df[filtered_df['highest_level_path'].isin(path)]
+
+    # Handle Gene filtering
+    if gene and "Show All (Genes)" not in gene:
+        filtered_df = filtered_df[filtered_df['gene'].isin(gene)]
+        
+    # Handle Disease filtering
+    if disease and "Show All (Diseases)" not in disease:
+        filtered_df = filtered_df[filtered_df['disease'].isin(disease)]
+
+    # Handle PMID filtering
+    if pmid and "Show All (PMID)" not in pmid:
+        pmid = [int(p) for p in pmid]
+        filtered_df = filtered_df[filtered_df['pmid'].isin(pmid)]
     
-    if gene != 'Show All (Genes)':  
-        filtered_df = filtered_df[filtered_df['gene'] == gene]
-    
-    if pmid != 'Show All (PMID)':  
-        pmid = int(pmid)
-        filtered_df = filtered_df[filtered_df['pmid'] == pmid]
-    
-    year_col = "pub_year"
+    year_col = "pubdate"
     filtered_df[year_col] = filtered_df[year_col].astype(int)
     filtered_df = filtered_df[(filtered_df[year_col] >= min_year_selected) & 
                               (filtered_df[year_col] <= max_year_selected)]
@@ -104,34 +141,37 @@ def filtered_articles():
     return filtered_df
 ```
 
-```{python}
-@reactive.calc
-def filter_pathways():
-    path = input.path_name()
-    gene = input.gene_name()
-
-    filtered_df = df2
-    if path != 'Show All (Paths)':
-        filtered_df = filtered_df[filtered_df['highest_level_path'] == path]
-    
-    return filtered_df
-```
-
-
 # Viz
 
 ## Row {height=120px}
 
 ```{python}
-#| id: articles-box
-@render.plot
-def articles_text():
-    num_articles = len(filtered_articles())
-    fig, ax = plt.subplots(figsize=(3, 1))
-    ax.text(0.5, 0.5, f"{num_articles} Articles", fontsize=16, ha='center', va='center')
-    ax.axis('off')
-    return fig
+@render.ui
+def pubmed_button():
+    df = filtered_articles()
+    if df.empty:
+        return ui.p("No article selected.")
+
+    pmids = df["pmid"].astype(str).tolist()
+
+    if len(pmids) > 1500:
+        return ui.div(
+            ui.p(f"Selected {len(pmids)} articles. To search PubMed, narrow your filters to under 1500."),
+            class_="btn btn-outline-primary"
+        )
+
+    joined_pmids = "+".join(pmids)
+    url = f"https://pubmed.ncbi.nlm.nih.gov/?term={joined_pmids}"
+
+    return ui.a(
+        f"Selected {len(pmids)} articles. Click to see articles on PubMed.",
+        href=url,
+        target="_blank",
+        class_="btn btn-outline-primary",
+        title="View selected articles on PubMed"
+    )
 ```
+
 
 ```{python}
 #| id: pathways-box
@@ -157,25 +197,20 @@ def genes_text():
     return fig
 ```
 
+```{python}
+#| id: diseease-box
+@render.plot
+def disease_text():
+    df = filtered_articles()
+    num_diseases = df['disease'].nunique()
+    fig, ax = plt.subplots(figsize=(3, 1))
+    ax.text(0.5, 0.5, f"{num_diseases} Diseases", fontsize=16, ha='center', va='center')
+    ax.axis('off')
+    return fig
+```
 ## Row {height=40%}
 
 ### Column {.tabset}
-
-```{python}
-#| title: Pathway -> Genes
-
-@render.ui
-def gene_pathway_viz():
-    filtered_df = filter_pathways()
-    xy_scaled = filtered_df[["x", "y"]].values
-    label_array = filtered_df["label"].values
-    genes_array = filtered_df["gene"].values
-    return dmp.create_interactive_plot(
-    xy_scaled,
-    label_array,
-    genes_array,
-)
-```
 
 ```{python}
 #| title: Pathway -> Genes -> Articles
@@ -183,10 +218,14 @@ def gene_pathway_viz():
 @render.ui
 def article_pathway_gene_viz():
     filtered_df = filtered_articles()
-    xy_scaled = filtered_df[["x_nw_cluster_hier", "y_nw_cluster_hier"]].values
+
+    if filtered_df.empty:
+        return ui.p("No data to display. Please adjust your filters.")
+
+    xy_scaled = filtered_df[["x_hier_hlp", "y_hier_hlp"]].values
     label_array = filtered_df["highest_level_path"].values
-    pmid_title = filtered_df["pmid_title"].values
-    genes_array = filtered_df["gene symbol"].values
+    pmid_title = filtered_df["pmid_title_gene"].values
+    genes_array = filtered_df["gene"].values
     return dmp.create_interactive_plot(
     xy_scaled,
     label_array,
@@ -197,15 +236,15 @@ def article_pathway_gene_viz():
 ```
 
 ```{python}
-#| title: Pathway -> Articles
+#| title: Disease -> Genes -> Articles
 
 @render.ui
-def article_pathway_viz():
+def article_disease_gene_viz():
     filtered_df = filtered_articles()
-    xy_scaled = filtered_df[["x_nw_cluster", "y_nw_cluster"]].values
-    label_array = filtered_df["highest_level_path"].values
-    pmid_title = filtered_df["pmid_title"].values
-    genes_array = filtered_df["gene symbol"].values
+    xy_scaled = filtered_df[["x_hier_dis", "y_hier_dis"]].values
+    label_array = filtered_df["disease"].values
+    pmid_title = filtered_df["pmid_title_disease"].values
+    genes_array = filtered_df["gene"].values
     return dmp.create_interactive_plot(
     xy_scaled,
     label_array,
@@ -213,31 +252,6 @@ def article_pathway_viz():
     hover_text=pmid_title,
     enable_search=True,
 )
-```
-
-```{python}
-#| title: 2D Semantic Articles Map
-
-@render_widget  
-def tsne_scatter():  
-    filtered_df = filtered_articles()
-    path = input.path_name()
-    scatterplot = px.scatter(
-        filtered_df, 
-        x='x', 
-        y='y', 
-        color='highest_level_path',
-        hover_data={'x': False, 'y': False, 'pmid': True,  'pub_year': True, 'title': True, 'gene':True},
-        title=f"2D Map of {'All Clusters' if path == 'Show All' else path + ': ' + str(len(filtered_df)) + ' PMIDS' }",
-        labels={'x': 't-SNE X', 'y': 't-SNE Y'},
-        template="plotly_white",
-        #legend='cluster'
-    ).update_traces(marker=dict(size=10, line=dict(width=1, color='DarkSlateGrey')))#.update_layout(
-        #width=900,
-        #height=700,
-        ##)
-    return scatterplot  
-
 ```
 
 ```{python}
@@ -247,7 +261,7 @@ def tsne_scatter():
 def datagrid():
     filtered_df = filtered_articles()
   
-    df_to_show = filtered_df[['pmid','title','pub_year','gene','highest_level_path']]
+    df_to_show = filtered_df[['pmid','pmid_title','pubdate','gene','highest_level_path','disease']]
     return render.DataGrid(
         df_to_show,
         width="100%",
@@ -326,7 +340,7 @@ def pathways_chart():
 @render_widget
 def pub_year_bar_chart():
     filtered_df = filtered_articles()
-    year_col = "pub_year"
+    year_col = "pubdate"
     
     # Count the occurrences of each overall status
     status_counts = filtered_df[year_col].value_counts().reset_index()
@@ -384,15 +398,15 @@ def journal_bar_chart():
     return bar_chart
 ```
 
-# Raw Data
+# CSV Export
 
 ```{python}
-#| title: Raw data
+#| title: Raw Data (Filters on the left do not apply)
 #| width: 100%
 #| padding: 0;
 from itables import show
 
-df_to_show = df[['pmid','title','pub_year','gene','highest_level_path']]
+df_to_show = df[['pmid','pmid_title','pubdate','gene','highest_level_path','disease']]
 df_to_show['pmid'] = df_to_show['pmid'].apply(
     lambda x: f'<a href="https://pubmed.ncbi.nlm.nih.gov/{x}" target="_blank">{x}</a>'
 )
