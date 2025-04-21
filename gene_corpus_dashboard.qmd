@@ -32,7 +32,7 @@ import plotly.express as px
 #| title: Filter Options
 #| expandable: false
 
-df = pd.read_csv("df_with_pos_all.csv")
+df = pd.read_csv("df_with_pos_all_incl_tsne.csv")
 
 path_options = ['Show All (Paths)'] + sorted(df['highest_level_path'].dropna().unique())
 gene_options = ['Show All (Genes)'] + sorted(df['gene'].dropna().unique())
@@ -252,6 +252,39 @@ def article_disease_gene_viz():
     hover_text=pmid_title,
     enable_search=True,
 )
+```
+
+```{python}
+#| title: 2D Semantic Articles Map
+
+@render_widget  
+def tsne_scatter():  
+    filtered_df = filtered_articles()
+    path = input.path_name()
+    
+    if not path or "Show All (Paths)" in path:
+      title_str = f"2D Map of All Clusters ({len(filtered_df)} PMIDs)"
+    elif len(path) == 1:
+        title_str = f"2D Map of {path[0]}: {len(filtered_df)} PMIDs"
+    else:
+        title_str = f"2D Map of Multiple Paths ({len(filtered_df)} PMIDs)"
+    
+    scatterplot = px.scatter(
+        filtered_df, 
+        x='x_tsne', 
+        y='y_tsne', 
+        color='highest_level_path',
+        hover_data={'x_tsne': False, 'y_tsne': False, 'pmid': True,  'pubdate': True, 'title': True, 'gene':True},
+        title=title_str,
+        labels={'x': 't-SNE X', 'y': 't-SNE Y'},
+        template="plotly_white",
+        color_discrete_sequence=px.colors.qualitative.Alphabet
+    ).update_traces(marker=dict(size=10, line=dict(width=1, color='DarkSlateGrey')))#.update_layout(
+        #width=900,
+        #height=700,
+        ##)
+    return scatterplot  
+
 ```
 
 ```{python}
